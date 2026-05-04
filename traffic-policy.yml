@@ -1,0 +1,21 @@
+on_http_request:
+  # Require OAuth login on all non-public routes.
+  - expressions:
+      - >
+        req.url.path.startsWith('/me') ||
+        req.url.path.startsWith('/private')
+    actions:
+      - type: oauth
+        config:
+          provider: google
+
+  # After a successful OAuth login, inject the identity into headers.
+  # The app reads these — they cannot arrive from outside the tunnel.
+  - expressions:
+      - "actions.ngrok.oauth.identity.email != ''"
+    actions:
+      - type: add-headers
+        config:
+          headers:
+            X-Forwarded-User-Email: "${actions.ngrok.oauth.identity.email}"
+            X-Forwarded-User-Name: "${actions.ngrok.oauth.identity.name}"
