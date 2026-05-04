@@ -1,2 +1,8 @@
-version: "3"
-authtoken: YOUR_NGROK_AUTHTOKEN
+version: 3
+agent:
+  authtoken: YOUR_NGROK_AUTHTOKEN
+endpoints:
+  - name: app
+    url: https://hono-app.internal
+    upstream:
+      url: localhost:3000
