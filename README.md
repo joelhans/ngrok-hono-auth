@@ -70,9 +70,9 @@ It also doesn't cover fine-grained RBAC, MFA enrollment, or anything that mutate
 bun install
 ```
 
-**2. Claim a free static domain**
+**2. Find your dev domain**
 
-Visit [dashboard.ngrok.com/domains](https://dashboard.ngrok.com/domains) and create a free static domain. It'll look like `something-something-1234.ngrok.app`. One time only.
+Every ngrok account gets a free [dev domain](https://ngrok.com/docs/universal-gateway/domains#dev-domains) on signup. Grab yours from [dashboard.ngrok.com/domains](https://dashboard.ngrok.com/domains). It'll look like `something-something-1234.ngrok.app`.
 
 **3. Set credentials**
 
@@ -110,7 +110,7 @@ bun run dev
 ngrok start --all
 ```
 
-This brings up the internal endpoint at `hono-app.internal`, which the cloud endpoint forwards to. Visit your static domain, log in with Google, and `GET /me` returns your identity.
+This brings up the internal endpoint at `hono-app.internal`, which the cloud endpoint forwards to. Visit your dev domain, log in with Google, and `GET /me` returns your identity.
 
 ## Routes
 
