@@ -1,16 +1,16 @@
 # ngrok-hono-auth
 
-OAuth at the ngrok edge. Two trusted headers in the app. No auth plumbing.
+A small Hono app where ngrok handles OAuth at the edge and the app reads two headers it can trust. About 30 lines of TypeScript and 20 lines of YAML, end to end.
 
-## The claim
+The repo exists to demonstrate one specific pattern. If it suits the way you build, take it. If it doesn't, no problem.
 
-You skip the *plumbing*: no OAuth callbacks, no session store, no token refresh, no PKCE, no provider SDKs, no user table for credentials. You still write *enforcement*: about ten lines of middleware that reads two headers and gates routes.
+## What's in here
 
-Full app: ~30 lines of Hono. Full auth config: ~20 lines of YAML.
+The app doesn't run any OAuth code: no callbacks, no session store, no token refresh, no PKCE, no provider SDK, no users-with-credentials table. It does have about ten lines of middleware that read `X-Forwarded-User-Email` and `X-Forwarded-User-Name` and gate routes. ngrok adds those headers after a successful OAuth login at the edge.
 
 ## How it works
 
-Two Traffic Policy rules do all the work. The `oauth` action intercepts matching requests, redirects unauthenticated users to your provider, and stores the verified identity in `actions.ngrok.oauth.identity`. The `add-headers` action then injects that identity into the forwarded request:
+The Traffic Policy file has two rules. The first uses the `oauth` action to intercept matching requests, redirect unauthenticated users to your provider, and store the verified identity in `actions.ngrok.oauth.identity`. The second uses `add-headers` to inject that identity into the forwarded request:
 
 ```yaml
 - type: add-headers
@@ -20,29 +20,26 @@ Two Traffic Policy rules do all the work. The `oauth` action intercepts matching
       X-Forwarded-User-Name: "${actions.ngrok.oauth.identity.name}"
 ```
 
-The app reads those headers and trusts them. That's the whole auth layer.
+The app reads those headers and trusts them.
 
-## The trust boundary, read this
+## The trust boundary
 
-The app trusts `X-Forwarded-User-Email` because of one structural fact: **the only way to reach the app is through the ngrok tunnel.**
+Trusting `X-Forwarded-User-Email` rests on one structural fact: the only way to reach the app is through the ngrok tunnel. The agent makes an outbound connection to ngrok's edge, and the app binds to `localhost` only. There's no inbound port, so there's no other path to forge the headers on.
 
-The agent makes an *outbound* connection to ngrok's edge. The app binds to `localhost` only, with no inbound port. No second path means no way to forge identity headers.
+If the upstream becomes reachable some other way (also bound to `0.0.0.0`, behind a public Kubernetes ingress, shared on a VPC), anything that can reach it can spoof the headers. Two deployment shapes preserve the property:
 
-This property is what makes the pattern safe. The moment your upstream is reachable some other way (also bound to `0.0.0.0`, behind a public Kubernetes ingress, shared on a VPC), anything that can reach it can spoof the headers. To keep the property in production:
+- **Single-host.** Agent and app on the same machine, app on `127.0.0.1`, ngrok installed as a system service.
+- **Multi-instance or Kubernetes.** Use [internal endpoints](https://ngrok.com/docs/universal-gateway/internal-endpoints/) so the upstream is only routable from inside ngrok's network.
 
-**For single-host deploys, keep the same shape.** Agent and app on the same machine, app on `127.0.0.1`, ngrok installed as a system service. Identical trust model, always on. Scales further than you'd think.
+Leaving the upstream addressable at a public URL or behind a public ingress breaks the property and makes the headers forgeable.
 
-**For multi-instance or Kubernetes, use [internal endpoints](https://ngrok.com/docs/universal-gateway/internal-endpoints/).** Your upstream stays routable only from inside ngrok's network. Same property, different topology.
+## A note on portability
 
-**What not to do:** leave the upstream addressable at a public URL or behind a public ingress. The headers become forgeable.
+The `X-Forwarded-User-Email` header name is a convention shared with oauth2-proxy and Cloudflare Access. Swapping ngrok for one of those in front of the same app wouldn't require app changes.
 
-## What about lock-in?
+## Authz in the same file
 
-`X-Forwarded-User-Email` is a convention, not an ngrok invention. oauth2-proxy and Cloudflare Access emit the same shape. If you ever leave ngrok, drop oauth2-proxy in front. The app doesn't change.
-
-## Authz lives in the policy too
-
-Once login runs at the edge, put coarse authz there too. Allowlist a domain:
+Coarse authz can live in the same Traffic Policy file as login. A domain allowlist:
 
 ```yaml
 - expressions:
@@ -54,13 +51,13 @@ Once login runs at the edge, put coarse authz there too. Allowlist a domain:
         status_code: 403
 ```
 
-Now the Traffic Policy file is your auth surface: login, identity propagation, and who's allowed in. Per-resource authz still lives in the app, where it belongs.
+Per-resource authz still belongs in the app.
 
-## What this doesn't give you
+## What this doesn't do
 
-Mostly, logout. The OAuth session lives in a cookie on ngrok's edge, and there's no app-side endpoint to clear it. Honestly: who logs out of anything anymore? Close the tab, clear cookies, or set a short session TTL on the policy. If a real logout button is non-negotiable, this pattern isn't for you, unless you accept writing the one piece of real auth code that gets you there.
+There's no logout. The OAuth session lives in a cookie on ngrok's edge, and there's no app-side endpoint to clear it. The workarounds are closing the tab, clearing cookies, or setting a short session TTL in the policy. Honestly: who logs out of anything anymore? If a real logout button matters to you, this isn't the right pattern.
 
-You also won't get fine-grained RBAC, MFA enrollment, or anything that mutates identity. Those belong to a real IdP, with or without ngrok in front.
+It also doesn't cover fine-grained RBAC, MFA enrollment, or anything that mutates identity. Those belong with an IdP, regardless of what's in front.
 
 ## Setup
 
